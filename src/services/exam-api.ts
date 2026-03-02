@@ -1,6 +1,6 @@
 import { APP_CONFIG } from '@/config';
 import type { ApiResponse, PaginatedResponse, PaginationParams } from '@/types';
-import type { Unit, Lesson, Question, Exam, ExamAttempt, ExamConfig } from '@/types/exam';
+import type { Unit, Lesson, Question, Exam, ExamAttempt, ExamConfig, ExternalExam, ExternalExamAttempt } from '@/types/exam';
 
 const delay = () => new Promise(r => setTimeout(r, APP_CONFIG.MOCK_DELAY));
 let idCounter = 500;
@@ -32,6 +32,8 @@ let questions: Question[] = [
 
 let exams: Exam[] = [];
 let attempts: ExamAttempt[] = [];
+let externalExams: ExternalExam[] = [];
+let externalAttempts: ExternalExamAttempt[] = [];
 
 function searchFilter<T extends Record<string, any>>(items: T[], search?: string): T[] {
   if (!search) return items;
@@ -282,6 +284,14 @@ export const examApi = {
     exams = [...exams, exam];
     return { data: exam, message: 'Exam generated', success: true, statusCode: 201 };
   },
+  update: async (id: string, data: Partial<Exam>): Promise<ApiResponse<Exam>> => {
+    await delay();
+    const idx = exams.findIndex(e => e.id === id);
+    if (idx === -1) return { data: null as any, message: 'Not found', success: false, statusCode: 404 };
+    exams[idx] = { ...exams[idx], ...data };
+    exams = [...exams];
+    return { data: exams[idx], message: 'Updated', success: true, statusCode: 200 };
+  },
   delete: async (id: string): Promise<ApiResponse<null>> => {
     await delay();
     exams = exams.filter(e => e.id !== id);
@@ -316,5 +326,83 @@ export const attemptApi = {
   getByExam: async (examId: string): Promise<ApiResponse<ExamAttempt[]>> => {
     await delay();
     return { data: attempts.filter(a => a.examId === examId), message: 'Success', success: true, statusCode: 200 };
+  },
+  addManual: async (examId: string, studentId: string, score: number): Promise<ApiResponse<ExamAttempt>> => {
+    await delay();
+    const exam = exams.find(e => e.id === examId);
+    if (!exam) return { data: null as any, message: 'Exam not found', success: false, statusCode: 404 };
+    const attempt: ExamAttempt = {
+      id: genId('att'), examId, studentId, answers: {}, score,
+      totalQuestions: exam.questionIds.length, completedAt: new Date().toISOString(),
+    };
+    attempts = [...attempts, attempt];
+    return { data: attempt, message: 'Score added', success: true, statusCode: 201 };
+  },
+};
+
+// ── External Exam API ──
+export const externalExamApi = {
+  getAll: async (params: PaginationParams): Promise<PaginatedResponse<ExternalExam>> => {
+    await delay();
+    let items = searchFilter([...externalExams], params.search);
+    const total = items.length;
+    const totalPages = Math.ceil(total / params.limit);
+    const start = (params.page - 1) * params.limit;
+    return { data: items.slice(start, start + params.limit), total, page: params.page, limit: params.limit, totalPages, message: 'Success', success: true, statusCode: 200 };
+  },
+  getById: async (id: string): Promise<ApiResponse<ExternalExam | null>> => {
+    await delay();
+    const item = externalExams.find(e => e.id === id) || null;
+    return { data: item, message: item ? 'Success' : 'Not found', success: !!item, statusCode: item ? 200 : 404 };
+  },
+  create: async (data: Omit<ExternalExam, 'id' | 'createdAt'>): Promise<ApiResponse<ExternalExam>> => {
+    await delay();
+    const newItem: ExternalExam = { ...data, id: genId('ext-exam'), createdAt: new Date().toISOString() };
+    externalExams = [...externalExams, newItem];
+    return { data: newItem, message: 'External exam created', success: true, statusCode: 201 };
+  },
+  update: async (id: string, data: Partial<ExternalExam>): Promise<ApiResponse<ExternalExam>> => {
+    await delay();
+    const idx = externalExams.findIndex(e => e.id === id);
+    if (idx === -1) return { data: null as any, message: 'Not found', success: false, statusCode: 404 };
+    externalExams[idx] = { ...externalExams[idx], ...data };
+    externalExams = [...externalExams];
+    return { data: externalExams[idx], message: 'Updated', success: true, statusCode: 200 };
+  },
+  delete: async (id: string): Promise<ApiResponse<null>> => {
+    await delay();
+    externalExams = externalExams.filter(e => e.id !== id);
+    externalAttempts = externalAttempts.filter(a => a.externalExamId !== id);
+    return { data: null, message: 'Deleted', success: true, statusCode: 200 };
+  },
+  submitCorrection: async (externalExamId: string, studentId: string, answers: Record<number, string | null>): Promise<ApiResponse<ExternalExamAttempt>> => {
+    await delay();
+    const exam = externalExams.find(e => e.id === externalExamId);
+    if (!exam) return { data: null as any, message: 'Not found', success: false, statusCode: 404 };
+    let correct = 0;
+    for (let i = 1; i <= exam.totalQuestions; i++) {
+      if (answers[i] && answers[i] === exam.answerKey[i]) correct++;
+    }
+    const attempt: ExternalExamAttempt = {
+      id: genId('ext-att'), externalExamId, studentId, answers, score: correct,
+      totalQuestions: exam.totalQuestions, completedAt: new Date().toISOString(),
+    };
+    externalAttempts = [...externalAttempts, attempt];
+    return { data: attempt, message: 'Corrected', success: true, statusCode: 201 };
+  },
+  getAttempts: async (externalExamId: string): Promise<ApiResponse<ExternalExamAttempt[]>> => {
+    await delay();
+    return { data: externalAttempts.filter(a => a.externalExamId === externalExamId), message: 'Success', success: true, statusCode: 200 };
+  },
+  addManualScore: async (externalExamId: string, studentId: string, score: number): Promise<ApiResponse<ExternalExamAttempt>> => {
+    await delay();
+    const exam = externalExams.find(e => e.id === externalExamId);
+    if (!exam) return { data: null as any, message: 'Not found', success: false, statusCode: 404 };
+    const attempt: ExternalExamAttempt = {
+      id: genId('ext-att'), externalExamId, studentId, answers: {}, score,
+      totalQuestions: exam.totalQuestions, completedAt: new Date().toISOString(),
+    };
+    externalAttempts = [...externalAttempts, attempt];
+    return { data: attempt, message: 'Score added', success: true, statusCode: 201 };
   },
 };

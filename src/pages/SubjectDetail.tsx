@@ -135,12 +135,12 @@ export default function SubjectDetail() {
         <TabsContent value="lessons">
           <Card>
             <CardHeader><CardTitle>Lessons for {subject.name}</CardTitle></CardHeader>
-            <CardContent>
+            <CardContent className="overflow-x-auto">
               {subjectLevels.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">No levels assigned to this subject</p>
               ) : (
                 <Tabs value={selectedLessonLevel || ''} onValueChange={v => setSelectedLessonLevel(v)}>
-                  <TabsList>
+                  <TabsList className="flex-wrap h-auto">
                     {subjectLevels.map((lvl: Level) => (
                       <TabsTrigger key={lvl.id} value={lvl.id}>{lvl.name}</TabsTrigger>
                     ))}

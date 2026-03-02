@@ -33,6 +33,9 @@ export default function TeachersPage() {
   const [editing, setEditing] = useState<Teacher | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Teacher | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [filterLevel, setFilterLevel] = useState<string>('all');
+  const [filterClass, setFilterClass] = useState<string>('all');
+  const [filterSubject, setFilterSubject] = useState<string>('all');
 
   const { data: res, isLoading } = useQuery({ queryKey: ['teachers'], queryFn: () => teacherApi.getAll({ page: 1, limit: 1000 }) });
   const { data: tplRes } = useQuery({ queryKey: ['templates'], queryFn: () => templateApi.get() });
@@ -76,7 +79,47 @@ export default function TeachersPage() {
         <div><h1 className="text-2xl font-bold tracking-tight">Teachers</h1><p className="text-muted-foreground">{res?.total ?? 0} teachers</p></div>
         <Button onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" />Add Teacher</Button>
       </div>
-      <DataTable data={res?.data || []} columns={columns} isLoading={isLoading} searchPlaceholder="Search teachers..." onView={t => navigate(`/teachers/${t.id}`)} onEdit={t => { setEditing(t); setDialogOpen(true); }} onDelete={t => setDeleteTarget(t)} exportFilename="teachers" onImportClick={() => setImportOpen(true)} />
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Select value={filterLevel} onValueChange={v => { setFilterLevel(v); setFilterClass('all'); }}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Levels" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Levels</SelectItem>
+            {(levelsRes?.data || []).map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterClass} onValueChange={setFilterClass}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Classes" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Classes</SelectItem>
+            {(classesRes?.data || []).filter((c: any) => filterLevel === 'all' || c.levelId === filterLevel).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterSubject} onValueChange={setFilterSubject}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Subjects" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Subjects</SelectItem>
+            {(subjectsRes?.data || []).map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {(filterLevel !== 'all' || filterClass !== 'all' || filterSubject !== 'all') && (
+          <Button variant="ghost" size="sm" onClick={() => { setFilterLevel('all'); setFilterClass('all'); setFilterSubject('all'); }}>Clear filters</Button>
+        )}
+      </div>
+      <DataTable data={(res?.data || []).filter((t: Teacher) => {
+        const assignedClassIds = (t.classAssignments || []).map(a => a.classId);
+        if (filterLevel !== 'all') {
+          const levelClassIds = (classesRes?.data || []).filter((c: any) => c.levelId === filterLevel).map((c: any) => c.id);
+          if (!assignedClassIds.some(id => levelClassIds.includes(id))) return false;
+        }
+        if (filterClass !== 'all') {
+          if (!assignedClassIds.includes(filterClass)) return false;
+        }
+        if (filterSubject !== 'all') {
+          if (!t.subjectIds.includes(filterSubject)) return false;
+        }
+        return true;
+      })} columns={columns} isLoading={isLoading} searchPlaceholder="Search teachers..." onView={t => navigate(`/teachers/${t.id}`)} onEdit={t => { setEditing(t); setDialogOpen(true); }} onDelete={t => setDeleteTarget(t)} exportFilename="teachers" onImportClick={() => setImportOpen(true)} />
       <TeacherDialog open={dialogOpen} onOpenChange={setDialogOpen} editing={editing} fields={fields} subjects={subjectsRes?.data || []} classes={classesRes?.data || []} levels={levelsRes?.data || []} isSubmitting={createMut.isPending || updateMut.isPending} onSubmit={(data: any) => editing ? updateMut.mutate({ id: editing.id, ...data }) : createMut.mutate(data)} />
       <ExcelImportDialog open={importOpen} onOpenChange={setImportOpen} onImport={handleImport} expectedColumns={['First Name', 'Last Name']} />
       <AlertDialog open={!!deleteTarget} onOpenChange={o => !o && setDeleteTarget(null)}>

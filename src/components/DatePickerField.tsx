@@ -11,9 +11,11 @@ interface DatePickerFieldProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  fromYear?: number;
+  toYear?: number;
 }
 
-export function DatePickerField({ value, onChange, placeholder = 'Pick a date', className }: DatePickerFieldProps) {
+export function DatePickerField({ value, onChange, placeholder = 'Pick a date', className, fromYear = 1950, toYear = 2040 }: DatePickerFieldProps) {
   const [open, setOpen] = useState(false);
   const date = value ? new Date(value) : undefined;
 
@@ -40,7 +42,11 @@ export function DatePickerField({ value, onChange, placeholder = 'Pick a date', 
             onChange(d ? format(d, 'yyyy-MM-dd') : '');
             setOpen(false);
           }}
+          captionLayout="dropdown-buttons"
+          fromYear={fromYear}
+          toYear={toYear}
           initialFocus
+          className="pointer-events-auto"
         />
       </PopoverContent>
     </Popover>

@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -33,6 +34,8 @@ export default function StudentsPage() {
   const [editing, setEditing] = useState<Student | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [filterLevel, setFilterLevel] = useState<string>('all');
+  const [filterClass, setFilterClass] = useState<string>('all');
 
   const { data: studentsRes, isLoading } = useQuery({ queryKey: ['students'], queryFn: () => studentApi.getAll({ page: 1, limit: 1000 }) });
   const { data: tplRes } = useQuery({ queryKey: ['templates'], queryFn: () => templateApi.get() });
@@ -98,8 +101,32 @@ export default function StudentsPage() {
         </div>
         <Button onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" />Add Student</Button>
       </div>
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Select value={filterLevel} onValueChange={v => { setFilterLevel(v); setFilterClass('all'); }}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Levels" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Levels</SelectItem>
+            {(levelsRes?.data || []).map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterClass} onValueChange={setFilterClass}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Classes" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Classes</SelectItem>
+            {(classesRes?.data || []).filter((c: any) => filterLevel === 'all' || c.levelId === filterLevel).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {(filterLevel !== 'all' || filterClass !== 'all') && (
+          <Button variant="ghost" size="sm" onClick={() => { setFilterLevel('all'); setFilterClass('all'); }}>Clear filters</Button>
+        )}
+      </div>
       <DataTable
-        data={studentsRes?.data || []}
+        data={(studentsRes?.data || []).filter((s: Student) => {
+          if (filterLevel !== 'all' && s.levelId !== filterLevel) return false;
+          if (filterClass !== 'all' && s.classId !== filterClass) return false;
+          return true;
+        })}
         columns={columns}
         isLoading={isLoading}
         searchPlaceholder="Search students..."
@@ -146,6 +173,7 @@ function StudentDialog({ open, onOpenChange, editing, fields, parents, levels, c
     classId: z.string().optional(),
     parentIds: z.array(z.string()).optional(),
     defaultParentId: z.string().optional(),
+    parentRelations: z.record(z.string()).optional(),
     photo: z.string().optional(),
     ...dynamicSchema,
   });
@@ -153,7 +181,7 @@ function StudentDialog({ open, onOpenChange, editing, fields, parents, levels, c
   const form = useForm({
     resolver: zodResolver(schema),
     defaultValues: {
-      firstname: '', lastname: '', levelId: '', classId: '', parentIds: [], defaultParentId: '', photo: '',
+      firstname: '', lastname: '', levelId: '', classId: '', parentIds: [], defaultParentId: '', parentRelations: {}, photo: '',
       ...getDynamicDefaults(fields),
     },
   });
@@ -168,6 +196,7 @@ function StudentDialog({ open, onOpenChange, editing, fields, parents, levels, c
         classId: editing?.classId || '',
         parentIds: editing?.parentIds || [],
         defaultParentId: editing?.defaultParentId || '',
+        parentRelations: editing?.parentRelations || {},
         photo: editing?.dynamicFields?.photo || '',
         ...getDynamicDefaults(fields, editing?.dynamicFields),
       });
@@ -178,8 +207,8 @@ function StudentDialog({ open, onOpenChange, editing, fields, parents, levels, c
   const filteredClasses = classes.filter((c: any) => c.levelId === watchLevel);
 
   const handleSubmit = (data: any) => {
-    const { firstname, lastname, levelId, classId, parentIds, defaultParentId, photo, ...rest } = data;
-    onSubmit({ firstname, lastname, levelId, classId, parentIds, defaultParentId, dynamicFields: { ...rest, photo } });
+    const { firstname, lastname, levelId, classId, parentIds, defaultParentId, parentRelations, photo, ...rest } = data;
+    onSubmit({ firstname, lastname, levelId, classId, parentIds, defaultParentId, parentRelations, dynamicFields: { ...rest, photo } });
   };
 
   // Multi-select for parents
@@ -309,6 +338,34 @@ function StudentDialog({ open, onOpenChange, editing, fields, parents, levels, c
                 </FormItem>
               )}
             />
+
+            {/* Relation names for selected parents */}
+            {selectedParentIds.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Parent Relations</Label>
+                <div className="space-y-2">
+                  {selectedParentIds.map((pid: string) => {
+                    const parent = parents.find((p: any) => p.id === pid);
+                    if (!parent) return null;
+                    const relations = form.watch('parentRelations') || {};
+                    return (
+                      <div key={pid} className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground min-w-[120px] truncate">{parent.firstname} {parent.lastname}</span>
+                        <Input
+                          placeholder="e.g. Father, Mother, Guardian"
+                          value={relations[pid] || ''}
+                          onChange={e => {
+                            const updated = { ...relations, [pid]: e.target.value };
+                            form.setValue('parentRelations', updated);
+                          }}
+                          className="flex-1 h-8 text-sm"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <DynamicFormFields fields={fields} control={form.control} />
             <div className="flex justify-end gap-2 pt-4">

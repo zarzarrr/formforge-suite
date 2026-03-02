@@ -73,3 +73,21 @@ export interface ExamAttempt {
   totalQuestions: number;
   completedAt: string;
 }
+
+export interface ExternalExam {
+  id: string;
+  name: string;
+  totalQuestions: number;
+  answerKey: Record<number, string>; // questionNum -> correct option (A/B/C/D)
+  createdAt: string;
+}
+
+export interface ExternalExamAttempt {
+  id: string;
+  externalExamId: string;
+  studentId: string;
+  answers: Record<number, string | null>; // questionNum -> selected option
+  score: number;
+  totalQuestions: number;
+  completedAt: string;
+}

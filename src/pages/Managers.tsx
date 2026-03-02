@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { Plus } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { managerApi, classApi, levelApi, templateApi } from '@/services/api';
 import { buildDynamicSchema, getDynamicDefaults } from '@/lib/schema-builder';
 import type { Manager } from '@/types';
@@ -28,6 +29,8 @@ export default function ManagersPage() {
   const [editing, setEditing] = useState<Manager | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Manager | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [filterLevel, setFilterLevel] = useState<string>('all');
+  const [filterClass, setFilterClass] = useState<string>('all');
 
   const { data: res, isLoading } = useQuery({ queryKey: ['managers'], queryFn: () => managerApi.getAll({ page: 1, limit: 1000 }) });
   const { data: tplRes } = useQuery({ queryKey: ['templates'], queryFn: () => templateApi.get() });
@@ -63,7 +66,36 @@ export default function ManagersPage() {
         <div><h1 className="text-2xl font-bold tracking-tight">Managers</h1><p className="text-muted-foreground">{res?.total ?? 0} managers</p></div>
         <Button onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" />Add Manager</Button>
       </div>
-      <DataTable data={res?.data || []} columns={columns} isLoading={isLoading} searchPlaceholder="Search managers..." onView={m => navigate(`/managers/${m.id}`)} onEdit={m => { setEditing(m); setDialogOpen(true); }} onDelete={m => setDeleteTarget(m)} exportFilename="managers" onImportClick={() => setImportOpen(true)} />
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Select value={filterLevel} onValueChange={v => { setFilterLevel(v); setFilterClass('all'); }}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Levels" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Levels</SelectItem>
+            {(levelsRes?.data || []).map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterClass} onValueChange={setFilterClass}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Classes" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Classes</SelectItem>
+            {(classesRes?.data || []).filter((c: any) => filterLevel === 'all' || c.levelId === filterLevel).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {(filterLevel !== 'all' || filterClass !== 'all') && (
+          <Button variant="ghost" size="sm" onClick={() => { setFilterLevel('all'); setFilterClass('all'); }}>Clear filters</Button>
+        )}
+      </div>
+      <DataTable data={(res?.data || []).filter((m: Manager) => {
+        if (filterLevel !== 'all') {
+          const levelClassIds = (classesRes?.data || []).filter((c: any) => c.levelId === filterLevel).map((c: any) => c.id);
+          if (!m.classIds.some(id => levelClassIds.includes(id))) return false;
+        }
+        if (filterClass !== 'all') {
+          if (!m.classIds.includes(filterClass)) return false;
+        }
+        return true;
+      })} columns={columns} isLoading={isLoading} searchPlaceholder="Search managers..." onView={m => navigate(`/managers/${m.id}`)} onEdit={m => { setEditing(m); setDialogOpen(true); }} onDelete={m => setDeleteTarget(m)} exportFilename="managers" onImportClick={() => setImportOpen(true)} />
       <ManagerDialog open={dialogOpen} onOpenChange={setDialogOpen} editing={editing} fields={fields} classes={classesRes?.data || []} levels={levelsRes?.data || []} isSubmitting={createMut.isPending || updateMut.isPending} onSubmit={handleSubmit} />
       <ExcelImportDialog open={importOpen} onOpenChange={setImportOpen} onImport={handleImport} expectedColumns={['First Name', 'Last Name']} />
       <AlertDialog open={!!deleteTarget} onOpenChange={o => !o && setDeleteTarget(null)}>

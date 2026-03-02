@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, Play, Search, Camera, Download, Upload } from 'lucide-react';
+import { Plus, Trash2, Play, Search, Camera, Download, Upload, Edit, Eye } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { PrintExamQuestions } from '@/components/PrintExamQuestions';
@@ -38,6 +38,7 @@ export default function Exams() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingExamId, setEditingExamId] = useState<string | null>(null);
 
   // Form state
   const [examName, setExamName] = useState('');
@@ -50,6 +51,7 @@ export default function Exams() {
   const [mediumCount, setMediumCount] = useState(3);
   const [hardCount, setHardCount] = useState(2);
   const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
+  const [examStatus, setExamStatus] = useState<'draft' | 'published'>('draft');
 
   // Queries
   const [importOpen, setImportOpen] = useState(false);
@@ -92,7 +94,11 @@ export default function Exams() {
 
   const generateMut = useMutation({
     mutationFn: (config: ExamConfig) => examApi.generate(config),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['exams'] }); toast({ title: 'Exam generated!' }); setDialogOpen(false); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['exams'] }); toast({ title: 'Exam generated!' }); setDialogOpen(false); setEditingExamId(null); },
+  });
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<any> }) => examApi.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['exams'] }); toast({ title: 'Exam updated' }); setDialogOpen(false); setEditingExamId(null); },
   });
   const deleteMut = useMutation({
     mutationFn: (id: string) => examApi.delete(id),
@@ -100,10 +106,24 @@ export default function Exams() {
   });
 
   const openGenerate = () => {
+    setEditingExamId(null);
     setExamName(''); setSelectedLevelId(''); setSelectedSubjectId('');
     setSelectedLessons([]); setSelectedQuestions([]);
     setMaxScore(100); setEasyCount(3); setMediumCount(3); setHardCount(2);
     setMode('auto'); setDialogOpen(true);
+  };
+
+  const openEdit = (exam: any) => {
+    setEditingExamId(exam.id);
+    setExamName(exam.name);
+    setMaxScore(exam.maxScore);
+    setExamStatus(exam.status);
+    setSelectedLevelId(exam.levelId);
+    setSelectedSubjectId(exam.subjectId);
+    setSelectedLessons(exam.lessonIds);
+    setSelectedQuestions(exam.questionIds);
+    setMode('manual');
+    setDialogOpen(true);
   };
 
   const handleLevelChange = (levelId: string) => {
@@ -130,6 +150,12 @@ export default function Exams() {
 
   const handleGenerate = () => {
     if (!examName.trim()) { toast({ title: 'Enter exam name', variant: 'destructive' }); return; }
+
+    if (editingExamId) {
+      updateMut.mutate({ id: editingExamId, data: { name: examName, maxScore, status: examStatus, levelId: selectedLevelId, subjectId: selectedSubjectId, lessonIds: selectedLessons } });
+      return;
+    }
+
     if (!selectedLevelId) { toast({ title: 'Select a level', variant: 'destructive' }); return; }
     if (!selectedSubjectId) { toast({ title: 'Select a subject', variant: 'destructive' }); return; }
     if (!selectedLessons.length) { toast({ title: 'Select at least one lesson', variant: 'destructive' }); return; }
@@ -201,6 +227,8 @@ export default function Exams() {
                   <TableCell>{exam.maxScore}</TableCell>
                   <TableCell><Badge variant={exam.status === 'published' ? 'default' : 'outline'}>{exam.status}</Badge></TableCell>
                   <TableCell className="text-right space-x-1">
+                    <Button variant="ghost" size="icon" onClick={() => navigate(`/exams/${exam.id}`)} title="View Details"><Eye className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => openEdit(exam)} title="Edit"><Edit className="h-4 w-4" /></Button>
                     <PrintQuestionsButton exam={exam} />
                     <PrintAnswerSheet />
                     <Button variant="ghost" size="icon" title="Export to Excel" onClick={async () => {
@@ -215,7 +243,7 @@ export default function Exams() {
                       ];
                       exportToExcel(qs, cols, `exam-${exam.name}`);
                     }}><Download className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => navigate(`/exams/${exam.id}/scan`)} title="تصحيح بالكاميرا"><Camera className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => navigate(`/exams/${exam.id}/scan`)} title="Scan"><Camera className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" onClick={() => navigate(`/exams/${exam.id}/take`)}><Play className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" onClick={() => deleteMut.mutate(exam.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                   </TableCell>
@@ -229,7 +257,7 @@ export default function Exams() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Generate Exam</DialogTitle>
+            <DialogTitle>{editingExamId ? 'Edit Exam' : 'Generate Exam'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -332,9 +360,23 @@ export default function Exams() {
               </div>
             </div>
 
-            <div>
-              <Label>Max Score</Label>
-              <Input type="number" min={1} value={maxScore} onChange={e => setMaxScore(parseInt(e.target.value) || 100)} />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Max Score</Label>
+                <Input type="number" min={1} value={maxScore} onChange={e => setMaxScore(parseInt(e.target.value) || 100)} />
+              </div>
+              {editingExamId && (
+                <div>
+                  <Label>Status</Label>
+                  <Select value={examStatus} onValueChange={v => setExamStatus(v as any)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="published">Published</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             <Tabs value={mode} onValueChange={v => setMode(v as 'manual' | 'auto')}>
@@ -375,7 +417,9 @@ export default function Exams() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleGenerate} disabled={generateMut.isPending}>Generate Exam</Button>
+            <Button onClick={handleGenerate} disabled={generateMut.isPending || updateMut.isPending}>
+              {editingExamId ? 'Save Changes' : 'Generate Exam'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
